@@ -90,29 +90,32 @@ class SimulacionRapipago:
                 'id': id_c, 'llegada': self.tiempo_actual,
                 'tipo': tipo_cliente, 'espera': 0.0
             }
+            # Espera = 0, acumulador no cambia pero el contador sí
+            if tipo_cliente == 'telefono':
+                self.clientes_tel_atendidos += 1
+            else:
+                self.clientes_gas_atendidos += 1
             self.agregar_evento(self.tiempo_actual + self.get_tiempo_atencion(), 'fin_atencion')
 
     def procesar_fin_atencion(self):
         if self.cliente_en_servicio:
-            c = self.cliente_en_servicio
-            if c['tipo'] == 'telefono':
-                self.tiempo_espera_tel_total += c['espera']
-                self.clientes_tel_atendidos += 1
-            else:
-                self.tiempo_espera_gas_total += c['espera']
-                self.clientes_gas_atendidos += 1
             self.total_atendidos += 1
-            # Remover objeto temporal del cliente atendido
-            self.clientes_activos.pop(c['id'], None)
+            self.clientes_activos.pop(self.cliente_en_servicio['id'], None)
 
         if self.cola:
             siguiente = self.cola.pop(0)
             espera = self.tiempo_actual - siguiente['llegada']
+            # Acumular espera y contar juntos al momento de empezar a ser atendido
+            if siguiente['tipo'] == 'telefono':
+                self.tiempo_espera_tel_total += espera
+                self.clientes_tel_atendidos += 1
+            else:
+                self.tiempo_espera_gas_total += espera
+                self.clientes_gas_atendidos += 1
             self.cliente_en_servicio = {
                 'id': siguiente['id'], 'llegada': siguiente['llegada'],
                 'tipo': siguiente['tipo'], 'espera': espera
             }
-            # Actualizar estado del objeto temporal
             self.clientes_activos[siguiente['id']]['estado'] = 'En atención'
             self.agregar_evento(self.tiempo_actual + self.get_tiempo_atencion(), 'fin_atencion')
         else:
@@ -137,6 +140,8 @@ class SimulacionRapipago:
             'estado_servidor': 'Libre',
             'cola': 0,
             'total_atendidos': 0,
+            'acum_espera_tel': 0,
+            'acum_espera_gas': 0,
             'clientes': [],
         })
 
@@ -165,6 +170,8 @@ class SimulacionRapipago:
                 'estado_servidor': 'Ocupado' if self.servidor_ocupado else 'Libre',
                 'cola': len(self.cola),
                 'total_atendidos': self.total_atendidos,
+                'acum_espera_tel': round(self.tiempo_espera_tel_total, 2),
+                'acum_espera_gas': round(self.tiempo_espera_gas_total, 2),
                 'clientes': self._snapshot_clientes(),
             })
 

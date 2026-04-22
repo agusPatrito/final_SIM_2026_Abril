@@ -138,7 +138,8 @@ HTML = """<!DOCTYPE html>
         headerRow.innerHTML =
             '<th>#</th><th>Reloj</th><th>Evento</th>' +
             '<th>P. L. Tel</th><th>P. L. Gas</th><th>P. Fin Ate</th>' +
-            '<th>Servidor</th><th>Cola</th><th>Atendidos</th>';
+            '<th>Servidor</th><th>Cola</th><th>Atendidos</th>' +
+            '<th>Acum. Espera Tel</th><th>Acum. Espera Gas</th>';
         ids.forEach(id => {
             headerRow.innerHTML += '<th>C' + id + ' Estado</th><th>C' + id + ' T.Llegada</th>';
         });
@@ -160,7 +161,9 @@ HTML = """<!DOCTYPE html>
                 '<td>' + fila.prox_fin + '</td>' +
                 '<td>' + fila.estado_servidor + '</td>' +
                 '<td>' + fila.cola + '</td>' +
-                '<td>' + fila.total_atendidos + '</td>';
+                '<td>' + fila.total_atendidos + '</td>' +
+                '<td>' + fila.acum_espera_tel + '</td>' +
+                '<td>' + fila.acum_espera_gas + '</td>';
 
             ids.forEach(id => {
                 const c = clientMap[id];
