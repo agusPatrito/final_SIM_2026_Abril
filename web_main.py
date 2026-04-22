@@ -74,6 +74,10 @@ class SimHandler(BaseHTTPRequestHandler):
                     </div>
 
                     <button class="btn-run" onclick="correr()">EJECUTAR SIMULACIÓN</button>
+
+                    <div id="aviso" style="display:none; margin-top:12px; padding:10px 14px;
+                         border-left:4px solid #c0392b; background:#fdecea; color:#c0392b;
+                         border-radius:4px; font-size:13px; white-space:pre-line;"></div>
                     
                     <div class="results" id="res_box">
                         <div class="res-item"><span>Max. personas en cola:</span> <span class="val" id="r_cola"></span></div>
@@ -91,42 +95,81 @@ class SimHandler(BaseHTTPRequestHandler):
                 </div>
                 
                 <script>
+                    function mostrarAviso(msg) {
+                        const d = document.getElementById('aviso');
+                        d.style.display = 'block';
+                        d.innerText = msg;
+                    }
+                    function ocultarAviso() {
+                        document.getElementById('aviso').style.display = 'none';
+                    }
+
                     function correr() {
+                        ocultarAviso();
+
+                        const campos = [
+                            { id: 't_med', nombre: 'Media Teléfono', max: 86400 },
+                            { id: 't_var', nombre: 'Var Teléfono',   max: 86400 },
+                            { id: 'g_med', nombre: 'Media Gas',      max: 86400 },
+                            { id: 'g_var', nombre: 'Var Gas',        max: 86400 },
+                            { id: 'a_med', nombre: 'Media Atención', max: 86400 },
+                            { id: 'a_var', nombre: 'Var Atención',   max: 86400 },
+                            { id: 'clientes', nombre: 'Cant. personas', max: 10000 },
+                        ];
+
+                        const errores = [];
+                        const vals = {};
+
+                        for (const c of campos) {
+                            const txt = document.getElementById(c.id).value.trim();
+                            const n   = parseFloat(txt);
+                            if (txt === '' || isNaN(n)) {
+                                errores.push('\u2717 "' + c.nombre + '": solo se permiten números.');
+                            } else if (n < 0) {
+                                errores.push('\u2717 "' + c.nombre + '": no se permiten negativos (recibido: ' + n + ').');
+                            } else if (n > c.max) {
+                                errores.push('\u2717 "' + c.nombre + '": valor demasiado grande. Máximo permitido: ' + c.max + '.');
+                            } else {
+                                vals[c.id] = n;
+                            }
+                        }
+
+                        if (errores.length > 0) {
+                            mostrarAviso(errores.join('\\n'));
+                            return;
+                        }
+
                         const params = {
-                            tm: document.getElementById('t_med').value,
-                            tv: document.getElementById('t_var').value,
-                            gm: document.getElementById('g_med').value,
-                            gv: document.getElementById('g_var').value,
-                            am: document.getElementById('a_med').value,
-                            av: document.getElementById('a_var').value,
-                            cli: document.getElementById('clientes').value
+                            tm: vals['t_med'], tv: vals['t_var'],
+                            gm: vals['g_med'], gv: vals['g_var'],
+                            am: vals['a_med'], av: vals['a_var'],
+                            cli: vals['clientes']
                         };
-                        
+
                         fetch('/simular', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify(params)
                         })
-                        .then(r => r.json())
-                        .then(d => {
+                        .then(r => r.json().then(d => ({ ok: r.ok, data: d })))
+                        .then(({ ok, data }) => {
+                            if (!ok) { mostrarAviso('\u2717 Error: ' + (data.error || 'Error desconocido.')); return; }
                             document.getElementById('res_box').style.display = 'block';
-                            document.getElementById('r_cola').innerText = d.max_cola + " personas";
-                            document.getElementById('r_tel').innerText = parseFloat(d.promedio_espera_tel).toFixed(2) + " seg.";
-                            document.getElementById('r_gas').innerText = parseFloat(d.promedio_espera_gas).toFixed(2) + " seg.";
-                            
-                            const hs = (d.tiempo_simulado / 3600).toFixed(2);
-                            document.getElementById('r_extra').innerText = `Total atendidos: ${d.total_clientes} (Tel: ${d.clientes_tel}, Gas: ${d.clientes_gas}) | Reloj: ${hs} hrs simuladas.`;
-                            
-                            // Llenar tabla de eventos
+                            document.getElementById('r_cola').innerText = data.max_cola + " personas";
+                            document.getElementById('r_tel').innerText = parseFloat(data.promedio_espera_tel).toFixed(2) + " seg.";
+                            document.getElementById('r_gas').innerText = parseFloat(data.promedio_espera_gas).toFixed(2) + " seg.";
+                            const hs = (data.tiempo_simulado / 3600).toFixed(2);
+                            document.getElementById('r_extra').innerText = `Total atendidos: ${data.total_clientes} (Tel: ${data.clientes_tel}, Gas: ${data.clientes_gas}) | Reloj: ${hs} hrs simuladas.`;
                             document.getElementById('tabla_box').style.display = 'block';
                             const tbody = document.getElementById('tabla_body');
                             tbody.innerHTML = '';
-                            d.tabla.forEach(fila => {
+                            data.tabla.forEach(fila => {
                                 const tr = document.createElement('tr');
                                 tr.innerHTML = `<td>${fila.reloj}</td><td>${fila.evento}</td><td>${fila.prox_tel}</td><td>${fila.prox_gas}</td><td>${fila.prox_fin}</td><td>${fila.estado_servidor}</td><td>${fila.cola}</td><td>${fila.total_atendidos}</td>`;
                                 tbody.appendChild(tr);
                             });
-                        });
+                        })
+                        .catch(() => mostrarAviso('\u2717 No se pudo conectar con el servidor.'));
                     }
                 </script>
             </body>
@@ -141,15 +184,36 @@ class SimHandler(BaseHTTPRequestHandler):
             params = json.loads(post_data)
             
             try:
-                # Instanciar el simulador con los parámetros que llegaron
+                tm, tv = float(params['tm']), float(params['tv'])
+                gm, gv = float(params['gm']), float(params['gv'])
+                am, av = float(params['am']), float(params['av'])
+                cli    = int(float(params['cli']))
+
+                # Validación: negativos y rangos inválidos
+                errores = []
+                for nombre, val in [('Media Tel',tm),('Var Tel',tv),('Media Gas',gm),('Var Gas',gv),('Media Ate',am),('Var Ate',av)]:
+                    if val < 0:     errores.append(f'{nombre} no puede ser negativo ({val})')
+                    if val > 86400: errores.append(f'{nombre} excede el máximo permitido de 86400 seg')
+                if tm - tv < 0: errores.append(f'Rango Teléfono negativo: {tm}-{tv}={tm-tv:.1f}')
+                if gm - gv < 0: errores.append(f'Rango Gas negativo: {gm}-{gv}={gm-gv:.1f}')
+                if am - av < 0: errores.append(f'Rango Atención negativo: {am}-{av}={am-av:.1f}')
+                if cli <= 0:      errores.append('La cantidad de personas debe ser > 0')
+                if cli > 10000:   errores.append(f'Máximo de personas permitido: 10000 (recibido: {cli})')
+
+                if errores:
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({'error': ' | '.join(errores)}).encode('utf-8'))
+                    return
+
                 sim = SimulacionRapipago(
-                    llegada_tel_media=float(params['tm']), llegada_tel_var=float(params['tv']),
-                    llegada_gas_media=float(params['gm']), llegada_gas_var=float(params['gv']),
-                    atencion_media=float(params['am']), atencion_var=float(params['av']),
-                    max_clientes=int(params['cli'])
+                    llegada_tel_media=tm, llegada_tel_var=tv,
+                    llegada_gas_media=gm, llegada_gas_var=gv,
+                    atencion_media=am, atencion_var=av,
+                    max_clientes=cli
                 )
                 resultados = sim.ejecutar()
-                
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()
